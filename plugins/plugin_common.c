@@ -10,7 +10,6 @@ void* plugin_consumer_thread(void* arg) {
     
     while (1) {
         char* item = consumer_producer_get(context->queue);
-
         if (!item) {
             break;
         }
@@ -25,13 +24,12 @@ void* plugin_consumer_thread(void* arg) {
         }
         
         const char* processed = context->process_function(item);
-        
         // Move to the next plugin if exists
         if (context->next_place_work && processed) {
             context->next_place_work(processed);
         }
         
-        // Free processed string when it is different from original
+        // Free when the processed string is different from original
         if (processed && processed != item) {
             free((void*)processed);
         }
@@ -41,18 +39,16 @@ void* plugin_consumer_thread(void* arg) {
     
     consumer_producer_signal_finished(context->queue);
     context->finished = 1;
-    
     return NULL;
 }
-// put in comment before submission
-void log_error(plugin_context_t* context, const char* message) {
-    fprintf(stderr, "[ERROR][%s] - %s\n", context->name, message);
-}
 
-void log_info(plugin_context_t* context, const char* message) {
-    fprintf(stdout, "[INFO][%s] - %s\n", context->name, message);
-}
-// put in comment before submission
+// void log_error(plugin_context_t* context, const char* message) {
+//     fprintf(stderr, "[ERROR][%s] - %s\n", context->name, message);
+// }
+
+// void log_info(plugin_context_t* context, const char* message) {
+//     fprintf(stdout, "[INFO][%s] - %s\n", context->name, message);
+// }
 
 const char* common_plugin_init(const char* (*process_function)(const char*), const char* name, int queue_size) {
     if (!process_function || !name || queue_size <= 0) {
@@ -63,27 +59,23 @@ const char* common_plugin_init(const char* (*process_function)(const char*), con
         return "Plugin already initialized";
     }
     
-    // Initialize context
     plugin_context.name = name;
     plugin_context.process_function = process_function;
     plugin_context.next_place_work = NULL;
     plugin_context.finished = 0;
     
     plugin_context.queue = (consumer_producer_t*)malloc(sizeof(consumer_producer_t)); 
-
     if (!plugin_context.queue) {
         return "Failed to allocate memory for queue";
     }
     
     const char* queue_error = consumer_producer_init(plugin_context.queue, queue_size);
-
     if (queue_error) {
         free(plugin_context.queue);
         plugin_context.queue = NULL;
         return queue_error;
     }
     
-    // Create consumer thread
     if (pthread_create(&plugin_context.consumer_thread, NULL, plugin_consumer_thread, &plugin_context) != 0) {
         consumer_producer_destroy(plugin_context.queue);
         free(plugin_context.queue);
@@ -100,7 +92,6 @@ const char* plugin_fini(void) {
         return "Plugin not initialized";
     }
     
-    // Wait for consumer thread to finish
     pthread_join(plugin_context.consumer_thread, NULL);
     
     if (plugin_context.queue) {
@@ -110,7 +101,6 @@ const char* plugin_fini(void) {
     }
     
     plugin_context.initialized = 0;
-
     return NULL;
 }
 

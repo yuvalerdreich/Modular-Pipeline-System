@@ -14,9 +14,9 @@ const char* plugin_transform(const char* input) {
     fflush(stdout);
     
     for (int i = 0; input[i] != '\0'; i++) {
+        usleep(100000);
         printf("%c", input[i]);
         fflush(stdout);
-        usleep(100000);
     }
 
     printf("\n");

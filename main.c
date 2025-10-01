@@ -21,8 +21,8 @@ typedef struct {
     void* handle;
 } plugin_handle_t;
 
-void print_usage(void) {
-    printf("Usage: ./analyzer <queue_size> <plugin1> <plugin2> ... <pluginN>\n");
+void print_usage(char* program_name) {
+    printf("Usage: %s <queue_size> <plugin1> <plugin2> ... <pluginN>\n", program_name);
     printf("Arguments:\n");
     printf("  queue_size    Maximum number of items in each plugin's queue\n");
     printf("  plugin1..N    Names of plugins to load (without .so extension)\n");
@@ -34,10 +34,10 @@ void print_usage(void) {
     printf("  flipper       - Reverses the order of characters\n");
     printf("  expander      - Expands each character with spaces\n");
     printf("Example:\n");
-    printf("  ./analyzer 20 uppercaser rotator logger\n");
+    printf("  %s 20 uppercaser rotator logger\n", program_name);
 }
 
-int load_plugin(const char* plugin_name, plugin_handle_t* plugin) {
+int load_plugin(const char* plugin_name, plugin_handle_t* plugin, char* program_name) {
     char filename[256];
     void* handle_first_option = NULL;
     void* handle_second_option = NULL; 
@@ -49,7 +49,7 @@ int load_plugin(const char* plugin_name, plugin_handle_t* plugin) {
     if (!handle_first_option) {
         snprintf(filename, sizeof(filename), "output/%s.so", plugin_name);
         handle_second_option = dlopen(filename, RTLD_NOW | RTLD_LOCAL);
-        
+
         if (!handle_second_option) {
             snprintf(filename, sizeof(filename), "./output/%s.so", plugin_name);
             handle_third_option = dlopen(filename, RTLD_NOW | RTLD_LOCAL);
@@ -57,52 +57,59 @@ int load_plugin(const char* plugin_name, plugin_handle_t* plugin) {
             if (!handle_third_option) {
                 fprintf(stderr, "Error loading plugin %s: %s\n", plugin_name, dlerror());
                 return -1;
+
             } else {
                 plugin->handle = handle_third_option;
             }
+
         } else {
             plugin->handle = handle_second_option;
         }
+
     } else {
         plugin->handle = handle_first_option;
     }
     
     dlerror();
     
-    // Load function symbols
     plugin->init = (plugin_init_func_t)dlsym(plugin->handle, "plugin_init");
     if (!plugin->init) {
         fprintf(stderr, "Error loading plugin_init from %s: %s\n", plugin_name, dlerror());
+        print_usage(program_name);
         dlclose(plugin->handle);
-        return -1;
+        return 1;
     }
     
     plugin->fini = (plugin_fini_func_t)dlsym(plugin->handle, "plugin_fini");
     if (!plugin->fini) {
         fprintf(stderr, "Error loading plugin_fini from %s: %s\n", plugin_name, dlerror());
+        print_usage(program_name);
         dlclose(plugin->handle);
-        return -1;
+        return 1;
     }
     
     plugin->place_work = (plugin_place_work_func_t)dlsym(plugin->handle, "plugin_place_work");
     if (!plugin->place_work) {
         fprintf(stderr, "Error loading plugin_place_work from %s: %s\n", plugin_name, dlerror());
+        print_usage(program_name);
         dlclose(plugin->handle);
-        return -1;
+        return 1;
     }
     
     plugin->attach = (plugin_attach_func_t)dlsym(plugin->handle, "plugin_attach");
     if (!plugin->attach) {
         fprintf(stderr, "Error loading plugin_attach from %s: %s\n", plugin_name, dlerror());
+        print_usage(program_name);
         dlclose(plugin->handle);
-        return -1;
+        return 1;
     }
     
     plugin->wait_finished = (plugin_wait_finished_func_t)dlsym(plugin->handle, "plugin_wait_finished");
     if (!plugin->wait_finished) {
         fprintf(stderr, "Error loading plugin_wait_finished from %s: %s\n", plugin_name, dlerror());
+        print_usage(program_name);
         dlclose(plugin->handle);
-        return -1;
+        return 1;
     }
     
     plugin->name = strdup(plugin_name);
@@ -114,9 +121,11 @@ void cleanup_plugins(plugin_handle_t* plugins, int count) {
         if (plugins[i].fini) {
             plugins[i].fini();
         }
+
         if (plugins[i].handle) {
             dlclose(plugins[i].handle);
         }
+
         if (plugins[i].name) {
             free(plugins[i].name);
         }
@@ -124,17 +133,28 @@ void cleanup_plugins(plugin_handle_t* plugins, int count) {
 }
 
 int main(int argc, char* argv[]) {
+    char* program_name = argv[0];
+
     if (argc < 3) {
         fprintf(stderr, "Error: Invalid number of arguments\n");
-        print_usage();
+        print_usage(program_name);
         return 1;
     }
-    
-    // Parse queue size
+
+    // Check that the first argument contains only digits
+    for (char *char_in_arg = argv[1]; *char_in_arg; ++char_in_arg) {
+        if (*char_in_arg < '0' || *char_in_arg > '9') {
+            fprintf(stderr, "Error: Invalid queue size\n");
+            print_usage(program_name);
+            return 1;
+        }
+    }
+
+    // Check that the first argument contains positive number
     int queue_size = atoi(argv[1]);
     if (queue_size <= 0) {
         fprintf(stderr, "Error: Invalid queue size\n");
-        print_usage();
+        print_usage(program_name);
         return 1;
     }
     
@@ -150,10 +170,10 @@ int main(int argc, char* argv[]) {
     
     // Load all plugins
     for (int i = 0; i < num_plugins; i++) {
-        if (load_plugin(argv[i + 2], &plugins[i]) != 0) {
+        if (load_plugin(argv[i + 2], &plugins[i], program_name) != 0) {
             cleanup_plugins(plugins, i);
             free(plugins);
-            print_usage();
+            print_usage(program_name);
             return 1;
         }
     }
@@ -177,13 +197,11 @@ int main(int argc, char* argv[]) {
     // Read input and process
     char line[1025];
     while (fgets(line, sizeof(line), stdin)) {
-        // Remove trailing newline
         int len = strlen(line);
         if (len > 0 && line[len - 1] == '\n') {
             line[len - 1] = '\0';
         }
         
-        // Send to first plugin
         if (num_plugins > 0) {
             const char* error = plugins[0].place_work(line);
             if (error) {
@@ -205,9 +223,11 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    // Cleanup
     cleanup_plugins(plugins, num_plugins);
     free(plugins);
     
+    // Finalize
     printf("Pipeline shutdown complete\n");
     return 0;
 }

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e  # Exit on any error
+set -e
 
 # Colors for output
 RED='\033[0;31m'
@@ -27,7 +27,7 @@ mkdir -p output
 
 # Build main application
 print_status "Building main application..."
-gcc -Wall -Wextra -o output/analyzer main.c -ldl -lpthread || {
+gcc -o output/analyzer main.c -ldl -lpthread || {
     print_error "Failed to build main application"
     exit 1
 }
@@ -36,6 +36,7 @@ gcc -Wall -Wextra -o output/analyzer main.c -ldl -lpthread || {
 plugins="logger typewriter uppercaser rotator flipper expander"
 
 # Build each plugin
+print_status "Building the plugins..."
 for plugin_name in $plugins; do
     print_status "Building plugin: $plugin_name"
     gcc -fPIC -shared -o output/${plugin_name}.so \
@@ -50,5 +51,4 @@ for plugin_name in $plugins; do
 done
 
 print_status "Build completed successfully!"
-print_status "Main executable: output/analyzer"
 print_status "Plugins built: $plugins"
